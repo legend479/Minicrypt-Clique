@@ -1,0 +1,150 @@
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: #0f1115;
+  color: #e6e6e6;
+  line-height: 1.4;
+}
+
+.app {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+header {
+  border-bottom: 1px solid #2a2a35;
+  padding-bottom: 12px;
+  margin-bottom: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+header h1 {
+  margin: 0;
+  font-size: 22px;
+  color: #82c1ff;
+}
+
+.controls { display: flex; gap: 16px; }
+.controls label {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 14px;
+}
+
+.controls select, .dropdowns select, .form input {
+  background: #1a1d24;
+  color: #e6e6e6;
+  border: 1px solid #2a2a35;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.dropdowns {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 16px;
+  padding: 12px;
+  background: #161922;
+  border-radius: 6px;
+}
+.dropdowns label { display: flex; align-items: center; gap: 6px; }
+
+.columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.column {
+  background: #161922;
+  padding: 16px;
+  border-radius: 6px;
+  border: 1px solid #2a2a35;
+}
+
+.column h2 {
+  margin: 0 0 4px 0;
+  font-size: 18px;
+  color: #82c1ff;
+}
+
+.subtitle {
+  color: #888;
+  font-size: 13px;
+  margin: 0 0 12px 0;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.form label { font-size: 12px; color: #888; }
+.form input { font-family: monospace; font-size: 12px; }
+
+button {
+  background: #2a5fa9;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  margin-top: 4px;
+  align-self: flex-start;
+}
+button:hover { background: #3a7fc9; }
+
+.result {
+  background: #0a0c10;
+  border: 1px solid #2a2a35;
+  padding: 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  overflow-x: auto;
+  max-height: 200px;
+  margin: 0;
+}
+
+.trace {
+  margin-top: 12px;
+  background: #0a0c10;
+  border-left: 3px solid #82c1ff;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+.trace h3 { margin: 0 0 8px 0; color: #82c1ff; font-size: 14px; }
+.trace ol { padding-left: 18px; margin: 0; }
+.trace li { margin-bottom: 8px; }
+.step-name { font-weight: bold; }
+.step-theorem { color: #ffaa55; font-size: 11px; }
+.step-io { font-family: monospace; color: #aaa; word-break: break-all; }
+.step-io code { color: #82c1ff; }
+
+.proof {
+  background: #161922;
+  padding: 16px;
+  border-radius: 6px;
+  border: 1px solid #2a2a35;
+}
+.proof h3 { margin: 0 0 8px 0; color: #82c1ff; }
+.proof ol li { margin-bottom: 8px; font-size: 14px; }
+.claim { color: #aaa; font-size: 12px; margin-top: 2px; }
+
+footer {
+  margin-top: 24px;
+  padding-top: 12px;
+  border-top: 1px solid #2a2a35;
+  color: #666;
+  text-align: center;
+}

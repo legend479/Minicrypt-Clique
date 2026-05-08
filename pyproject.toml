@@ -1,0 +1,10 @@
+[project]
+name = "pois_crypto"
+version = "0.1.0"
+description = "CS8.401 Principles of Information Security - PA#1-#20"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-q --tb=short"

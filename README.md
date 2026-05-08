@@ -115,4 +115,3 @@ tests/                   pytest suite (mirrors crypto_core/ + integration)
   extension, RSA determinism, Håstad broadcast, ElGamal malleability,
   DH MITM, raw-RSA homomorphism forgery, birthday attack on truncated DLP
   hash. Each demonstrates *why* the corresponding hardening exists.
-# Minicrypt-Clique
