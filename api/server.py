@@ -412,6 +412,8 @@ def create_app():
         from crypto_core.pubkey.rsa_attacks import determinism_demo
         data = request.get_json(force=True)
         bits = int(data.get("bits", 512))
+        if bits < 256:
+            bits = 512
         m = data.get("message", "hi").encode("utf-8")
         mode = data.get("mode", "textbook")
         rsa = RSA(bits=bits)
