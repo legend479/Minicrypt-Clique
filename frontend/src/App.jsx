@@ -10,7 +10,8 @@ const PRIMITIVES = [
 
 // Map each primitive to the PA endpoint that demonstrates it.
 const PA_ENDPOINTS = {
-  'OWF':       { name: 'PA#1 - PRG (HILL)',  path: '/api/pa1/prg',     pa: 1 },
+  'OWF':       { name: 'PA#1 - DLP OWP',     path: '/api/pa1/owp',     pa: 1 },
+  'OWP':       { name: 'PA#1 - DLP OWP',     path: '/api/pa1/owp',     pa: 1 },
   'PRG':       { name: 'PA#1 - PRG (HILL)',  path: '/api/pa1/prg',     pa: 1 },
   'PRF':       { name: 'PA#2 - GGM tree',    path: '/api/pa2/ggm',     pa: 2 },
   'PRP':       { name: 'PA#4 - modes',       path: '/api/pa4/modes',   pa: 4 },
@@ -25,7 +26,30 @@ const PA_ENDPOINTS = {
   'OT':        { name: 'PA#18 - OT',         path: '/api/pa18/ot',     pa: 18 },
   'SecureAND': { name: 'PA#19 - secure AND', path: '/api/pa19/and',    pa: 19 },
   'MPC':       { name: 'PA#20 - MPC',        path: '/api/pa20/mpc',    pa: 20 },
-  'OWP':       { name: 'foundation: DLP OWP', path: null, pa: 1 },
+}
+
+function defaultPayload(foundation) {
+  return {
+    foundation,
+    seed: '00112233445566778899aabbccddeeff',
+    output_bytes: 32,
+    key: '00112233445566778899aabbccddeeff',
+    message: 'hello world',
+    bits: 80,
+  }
+}
+
+async function postJson(path, payload) {
+  const resp = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  const data = await resp.json()
+  if (!resp.ok) {
+    throw new Error(data?.error || `${path} failed with HTTP ${resp.status}`)
+  }
+  return data
 }
 
 function hex(bytes) {
@@ -73,18 +97,12 @@ function ColumnBuild({ foundation, primA, output, onUpdate }) {
       return
     }
     try {
-      const resp = await fetch(ep.path, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          seed: seedHex,
-          output_bytes: parseInt(outBytes),
-          key: seedHex,
-          message: 'hello world',
-          bits: 80,
-        }),
+      const data = await postJson(ep.path, {
+        ...defaultPayload(foundation),
+        seed: seedHex,
+        key: seedHex,
+        output_bytes: parseInt(outBytes),
       })
-      const data = await resp.json()
       onUpdate(data)
     } catch (e) {
       onUpdate({ error: String(e) })
@@ -108,20 +126,41 @@ function ColumnBuild({ foundation, primA, output, onUpdate }) {
   )
 }
 
-function ColumnReduce({ primA, primB, output, onUpdate }) {
+function ColumnReduce({ foundation, primA, primB, chain, buildOutput, output, onUpdate }) {
   async function run() {
-    const ep = PA_ENDPOINTS[primB]
-    if (!ep || !ep.path) {
-      onUpdate({ note: `${primB}: not yet implemented as endpoint` })
+    if (!chain) {
+      onUpdate({ error: 'Reduction chain has not loaded yet' })
+      return
+    }
+    if (!chain.path) {
+      onUpdate({ chain, demos: [], note: 'No reducer path is available for this pair' })
       return
     }
     try {
-      const resp = await fetch(ep.path, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      })
-      onUpdate(await resp.json())
+      const demos = []
+      if (chain.path.length === 0) {
+        const ep = PA_ENDPOINTS[primB]
+        if (ep?.path) {
+          demos.push({ primitive: primB, endpoint: ep.path, result: await postJson(ep.path, defaultPayload(foundation)) })
+        }
+      } else {
+        for (const edge of chain.path) {
+          const ep = PA_ENDPOINTS[edge.dst]
+          if (!ep?.path) {
+            demos.push({ primitive: edge.dst, skipped: true, reason: 'No demo endpoint' })
+            continue
+          }
+          const result = await postJson(ep.path, {
+            ...defaultPayload(foundation),
+            source: primA,
+            target: primB,
+            theorem: edge.theorem,
+            black_box_from_column_1: buildOutput ? 'available' : 'not_built',
+          })
+          demos.push({ primitive: edge.dst, theorem: edge.theorem, endpoint: ep.path, result })
+        }
+      }
+      onUpdate({ chain, black_box_input: buildOutput || null, demos })
     } catch (e) {
       onUpdate({ error: String(e) })
     }
@@ -224,8 +263,11 @@ export default function App() {
             onUpdate={setBuild1}
           />
           <ColumnReduce
+            foundation={foundation}
             primA={primA}
             primB={primB}
+            chain={chain}
+            buildOutput={build1}
             output={build2}
             onUpdate={setBuild2}
           />

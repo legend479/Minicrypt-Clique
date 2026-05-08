@@ -51,10 +51,10 @@ common  <  number_theory  <  foundation  <  minicrypt  <  hashing  <  pubkey  < 
 
 ```bash
 pip install -r requirements.txt
-pytest -q
+python3 -m pytest -q
 ```
 
-The suite has 101 tests covering every PA, the no-libs architectural rule,
+The suite has 127 tests covering every PA, the no-libs architectural rule,
 the os.urandom chokepoint, FIPS-197 AES vectors, Carmichael 561, RSA-CRT
 correctness, Håstad's attack, ElGamal malleability, signcryption tamper-
 rejection, MPC truth tables, and end-to-end lineage from PA#20 down to PA#13.
@@ -62,7 +62,7 @@ rejection, MPC truth tables, and end-to-end lineage from PA#20 down to PA#13.
 ### Backend (PA#0 explorer API)
 
 ```bash
-python -m api.server
+python3 -m api.server
 ```
 
 Serves on `http://localhost:5000`. Endpoints: `/api/health`, `/api/clique`,
@@ -72,7 +72,7 @@ Serves on `http://localhost:5000`. Endpoints: `/api/health`, `/api/clique`,
 
 ```bash
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
 

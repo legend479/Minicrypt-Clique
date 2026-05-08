@@ -51,7 +51,7 @@ class HMAC(MAC):
 
     def _pad_key(self, k: bytes) -> bytes:
         if len(k) > self._block_size:
-            k = self._H.digest(k)
+            k = self._H.digest(k)[:self._block_size]
         if len(k) < self._block_size:
             k = k + b"\x00" * (self._block_size - len(k))
         return k

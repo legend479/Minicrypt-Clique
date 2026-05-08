@@ -2,7 +2,8 @@
 import os
 import pytest
 from crypto_core.hashing.merkle_damgard import MerkleDamgard, XorToyCompression
-from crypto_core.hashing.dlp_hash import DLPHash
+from crypto_core.hashing.dlp_hash import DLPCompression, DLPHash
+from crypto_core.foundation.dlp_foundation import DLPFoundation
 from crypto_core.hashing.birthday import birthday_attack_naive, birthday_attack_floyd
 from crypto_core.hashing.hmac import HMAC, EncryptThenHMAC, mac_to_compression, make_mac_based_crhf
 from crypto_core.foundation.aes_foundation import AESFoundation
@@ -48,6 +49,21 @@ def test_dlp_hash_truncation():
     h = DLPHash(bits=80, truncate_to=4)
     d = h.digest(b"hello")
     assert len(d) == 4
+
+
+def test_dlp_compression_rejects_noncanonical_state_collision():
+    f = DLPFoundation(bits=80)
+    comp = DLPCompression(f)
+    block = (1).to_bytes(comp.block_size, "big")
+    z1 = (1).to_bytes(comp.output_size, "big")
+    z2 = (1 + f.q).to_bytes(comp.output_size, "big")
+    assert z1 != z2
+    out1 = comp(z1, block)
+    try:
+        out2 = comp(z2, block)
+    except ValueError:
+        return
+    assert out1 != out2
 
 
 # ---------- PA#9: Birthday attack ----------

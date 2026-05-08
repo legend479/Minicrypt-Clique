@@ -4,16 +4,14 @@ PA#5: Message Authentication Codes.
 Three constructions:
   PRFMAC: t = F_k(m)              (fixed-length messages only)
   CBCMAC: chain F_k over message blocks   (variable-length messages)
-  HMAC:   defined here as a STUB (see hashing/hmac.py for full PA#10)
+  HMAC:   implemented in crypto_core.hashing.hmac for PA#10
 
 Includes:
   - EUF-CMA game simulator
   - Length-extension attack demo on naive H(k || m)
 """
-from typing import List
 from crypto_core.common.interfaces import PRF, PRP, MAC
 from crypto_core.common.bitops import xor_bytes
-from crypto_core.common.exceptions import StubNotImplemented, MacVerificationFailure
 
 
 # ---------- helpers ----------
@@ -128,23 +126,6 @@ class CBCMAC(MAC):
 
     def verify(self, k: bytes, m: bytes, t: bytes) -> bool:
         return constant_time_eq(self.mac(k, m), t)
-
-
-# ---------- HMAC stub (full impl in hashing/hmac.py for PA#10) ----------
-
-class HMACStub(MAC):
-    """Placeholder HMAC. PA#10 fills this in via hashing/hmac.py."""
-
-    @property
-    def key_size(self): return 16
-    @property
-    def tag_size(self): return 16
-
-    def mac(self, k, m, *, trace=None):
-        raise StubNotImplemented("Stub: HMAC implemented in PA#10 (hashing/hmac.py)")
-
-    def verify(self, k, m, t):
-        raise StubNotImplemented("Stub: HMAC implemented in PA#10")
 
 
 # ---------- Length-extension attack on naive H(k||m) ----------

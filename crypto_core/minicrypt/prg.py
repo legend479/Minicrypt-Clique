@@ -40,6 +40,7 @@ class HILLPRG(PRG):
         self._seed: Optional[int] = None
         # Domain bits = number of bits in seed = number of bits per state
         self._domain_bits = owf.domain_bits
+        self._domain_size = getattr(owf, "domain_size", 1 << self._domain_bits)
 
     @property
     def seed_length(self) -> int:
@@ -48,13 +49,10 @@ class HILLPRG(PRG):
     def seed(self, s: bytes) -> None:
         if len(s) < self.seed_length:
             raise ValueError(f"HILLPRG seed must be >= {self.seed_length} bytes")
-        # Truncate / mask to fit domain
+        # Truncate / mask to fit the encoded domain.
         seed_int = int.from_bytes(s[:self.seed_length], "big")
-        # Mask to domain_bits to ensure within domain
         seed_int &= (1 << self._domain_bits) - 1
-        # If domain is Z_q (DLP), ensure within bounds (modulo if necessary)
-        if hasattr(self._owf, "q"):
-            seed_int %= self._owf.q
+        seed_int %= self._domain_size
         self._seed = seed_int
 
     def next_bits(self, n_bytes: int, *, trace=None) -> bytes:
@@ -70,9 +68,8 @@ class HILLPRG(PRG):
         for i in range(n_bits):
             bits.append(self._owf.hard_core_predicate(x))
             x = self._owf.evaluate(x)
-            # If foundation has domain bound, keep in bound
-            if hasattr(self._owf, "q"):
-                x %= self._owf.q
+            if not (0 <= x < self._domain_size):
+                raise ValueError("HILLPRG underlying OWF returned a value outside its domain")
         out = bits_to_bytes(bits)
 
         if trace is not None:

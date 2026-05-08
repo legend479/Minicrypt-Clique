@@ -4,7 +4,7 @@ Flask backend for the PA#0 React web app.
 Exposes endpoints for every PA's interactive demo, plus the clique routing
 endpoints that power the foundation/source/target dropdowns.
 
-Start with:  python -m api.server
+Start with:  python3 -m api.server
 The frontend (frontend/) connects to http://localhost:5000 by default.
 """
 from flask import Flask, request, jsonify
@@ -17,6 +17,14 @@ from routing.reducer import reduce, describe_chain
 def create_app():
     app = Flask(__name__)
     CORS(app)
+
+    @app.errorhandler(ValueError)
+    def bad_value(err):
+        return jsonify({"error": str(err)}), 400
+
+    @app.errorhandler(KeyError)
+    def bad_key(err):
+        return jsonify({"error": f"missing required field: {err.args[0]}"}), 400
 
     # ------------ Health and metadata ------------
 
@@ -39,9 +47,11 @@ def create_app():
 
     @app.route("/api/reduce", methods=["POST"])
     def reduce_endpoint():
-        data = request.get_json(force=True)
+        data = request.get_json(force=True, silent=True) or {}
         A = data["from"]; B = data["to"]
         direction = data.get("direction", "forward")
+        if direction not in ("forward", "any"):
+            raise ValueError("direction must be 'forward' or 'any'")
         chain = reduce(A, B, direction=direction)
         if chain is None:
             return jsonify({"path": None, "summary": "(no path found)"})
@@ -57,23 +67,45 @@ def create_app():
 
     # ------------ PA#1: PRG ------------
 
+    @app.route("/api/pa1/owp", methods=["POST"])
+    def pa1_owp():
+        from crypto_core.foundation.dlp_foundation import DLPFoundation
+        data = request.get_json(force=True, silent=True) or {}
+        bits = int(data.get("bits", 80))
+        x = int(data.get("x", 0))
+        f = DLPFoundation(bits=bits)
+        owp = f.as_owp()
+        trace = StepTrace()
+        y = owp.evaluate(x % owp.domain_size, trace=trace)
+        return jsonify({
+            "p": f.p,
+            "q": f.q,
+            "subgroup_g": f.g,
+            "full_generator": f.full_generator,
+            "input": x % owp.domain_size,
+            "output": y,
+            "trace": trace.to_json(),
+        })
+
     @app.route("/api/pa1/prg", methods=["POST"])
     def pa1_prg():
+        from crypto_core.foundation.aes_foundation import AESFoundation
         from crypto_core.foundation.dlp_foundation import DLPFoundation
         from crypto_core.minicrypt.prg import (
             HILLPRG, monobit_frequency_test, runs_test, serial_test_lite,
         )
-        data = request.get_json(force=True)
+        data = request.get_json(force=True, silent=True) or {}
         seed_hex = data.get("seed", "00" * 16)
         out_bytes = int(data.get("output_bytes", 32))
         bits = int(data.get("bits", 80))
+        foundation = data.get("foundation", "DLP")
         seed = bytes.fromhex(seed_hex)
-        f = DLPFoundation(bits=bits)
-        prg = HILLPRG(f.as_owp())
+        f = AESFoundation() if foundation == "AES" else DLPFoundation(bits=bits)
+        prg = HILLPRG(f.as_owf())
         prg.seed(seed)
         trace = StepTrace()
         out = prg.next_bits(out_bytes, trace=trace)
-        long_out = HILLPRG(f.as_owp())
+        long_out = HILLPRG(f.as_owf())
         long_out.seed(seed)
         sample = long_out.next_bits(max(out_bytes, 64))
         p_freq, ok_freq = monobit_frequency_test(sample)

@@ -26,6 +26,3 @@ class OTSenderError(CryptoError):
 class NotSupported(CryptoError):
     """A foundation/primitive does not support a requested view."""
 
-
-class StubNotImplemented(CryptoError):
-    """Stub placeholder; raised by unimplemented PA modules."""

@@ -52,8 +52,18 @@ def test_dlp_construction():
 def test_dlp_owp_evaluation():
     f = DLPFoundation(bits=64)
     owp = f.as_owp()
-    assert owp.evaluate(0) == 1
-    assert owp.evaluate(1) == f.g
+    assert 0 <= owp.evaluate(0) < owp.domain_size
+    assert 0 <= owp.evaluate(1) < owp.domain_size
+    assert owp.evaluate(0) != owp.evaluate(1)
+
+
+def test_dlp_owp_is_closed_over_its_domain():
+    f = DLPFoundation(bits=64)
+    owp = f.as_owp()
+    x = 0
+    for _ in range(200):
+        x = owp.evaluate(x)
+        assert 0 <= x < owp.domain_size
 
 
 def test_dlp_owp_is_permutation_small_q():

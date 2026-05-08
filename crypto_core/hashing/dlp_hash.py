@@ -12,7 +12,6 @@ We plug this into PA#7's Merkle-Damgard framework to get a full hash for
 arbitrary-length input.
 """
 from crypto_core.common.interfaces import CRHF
-from crypto_core.common.bitops import int_to_bytes
 from crypto_core.foundation.dlp_foundation import DLPFoundation
 from crypto_core.number_theory.modular import mod_pow
 from crypto_core.hashing.merkle_damgard import MerkleDamgard
@@ -38,10 +37,14 @@ class DLPCompression:
             h_pub = mod_pow(self._g, alpha, self._p)
             # Note: we deliberately do not store alpha.
         self._h_pub = h_pub
-        # Output / block sizing. p has bit length ~q+1; pick output_size to fit p.
+        # Output / block sizing. The chaining state is a canonical subgroup
+        # element in Z_p^*, so output_size must fit p. Blocks are interpreted as
+        # exponents in Z_q; choose a block size whose whole byte range fits
+        # below q so distinct blocks cannot collide merely by reduction mod q.
         self._output_size = (self._p.bit_length() + 7) // 8
-        # Block size: q-bit chunks (one m_i in Z_q per compression).
-        self._block_size = (self._q.bit_length() + 7) // 8
+        self._block_size = (self._q.bit_length() - 1) // 8
+        if self._block_size < 9:
+            raise ValueError("DLPHash requires a group large enough for MD strengthening blocks")
 
     @property
     def output_size(self):
@@ -53,7 +56,7 @@ class DLPCompression:
 
     @property
     def iv(self):
-        # IV: representation of group identity 1.
+        # IV: canonical representation of group identity 1.
         return (1).to_bytes(self._output_size, "big")
 
     @property
@@ -61,16 +64,22 @@ class DLPCompression:
         return self._h_pub
 
     def __call__(self, z_bytes: bytes, m_bytes: bytes) -> bytes:
-        # Parse z_bytes as group element; m_bytes as a Z_q exponent.
-        # Compression: new_state = z^a * g^x * h^y mod p   for some encoding.
-        # We use the standard 2-input formulation where state and block both
-        # contribute multiplicatively:
-        #   new_state = (g^state_int) * (h_pub^block_int)  mod p
-        # Then we re-encode the integer as bytes.
-        state_int = int.from_bytes(z_bytes, "big") % self._q
-        block_int = int.from_bytes(m_bytes, "big") % self._q
-        out = (mod_pow(self._g, state_int, self._p) *
-               mod_pow(self._h_pub, block_int, self._p)) % self._p
+        if len(z_bytes) != self._output_size:
+            raise ValueError(f"DLP compression state must be {self._output_size} bytes")
+        if len(m_bytes) != self._block_size:
+            raise ValueError(f"DLP compression block must be {self._block_size} bytes")
+
+        state_int = int.from_bytes(z_bytes, "big")
+        if not (1 <= state_int < self._p):
+            raise ValueError("DLP compression state is not a canonical group element")
+        if mod_pow(state_int, self._q, self._p) != 1:
+            raise ValueError("DLP compression state is outside the order-q subgroup")
+
+        block_int = int.from_bytes(m_bytes, "big")
+        if block_int >= self._q:
+            raise ValueError("DLP compression block is outside Z_q")
+
+        out = (state_int * mod_pow(self._h_pub, block_int, self._p)) % self._p
         return out.to_bytes(self._output_size, "big")
 
 
@@ -79,7 +88,7 @@ class DLPHash(CRHF):
     Full DLP-based CRHF: PA#8 compression plugged into PA#7 Merkle-Damgard.
     """
 
-    def __init__(self, foundation: DLPFoundation = None, bits: int = 64,
+    def __init__(self, foundation: DLPFoundation = None, bits: int = 80,
                  truncate_to: int = None):
         if foundation is None:
             foundation = DLPFoundation(bits=bits)

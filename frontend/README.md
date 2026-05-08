@@ -7,12 +7,12 @@ Vite + React app for the PA#0 deliverable.
 In one terminal, start the Python backend:
 ```bash
 cd ..
-python -m api.server
+python3 -m api.server
 ```
 
 In another terminal, start the dev server:
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
