@@ -26,6 +26,45 @@ def test_health_and_clique_metadata(client):
     assert any(e["src"] == "OWF" and e["dst"] == "PRG" for e in clique["edges"])
 
 
+def test_catalog_lists_every_exposed_pa_demo(client):
+    catalog = client.get("/api/catalog").get_json()
+    demos = catalog["demos"]
+    paths = {demo["path"] for demo in demos}
+    pa_numbers = {demo["pa"] for demo in demos}
+    assert len(demos) >= 21
+    assert set(range(1, 21)).issubset(pa_numbers)
+    assert {"/api/pa7/md", "/api/pa9/birthday", "/api/pa11/dh",
+            "/api/pa13/miller_rabin", "/api/pa14/hastad",
+            "/api/pa16/elgamal"}.issubset(paths)
+    for demo in demos:
+        assert {"id", "pa", "title", "category", "path", "default_payload",
+                "controls", "result_fields", "tags", "claim"}.issubset(demo)
+
+
+def test_catalog_paths_match_registered_routes(client):
+    route_paths = {rule.rule for rule in client.application.url_map.iter_rules()}
+    catalog = client.get("/api/catalog").get_json()
+    for demo in catalog["demos"]:
+        assert demo["path"] in route_paths
+
+
+def test_catalog_default_payloads_are_runnable_for_smoke_subset(client):
+    catalog = client.get("/api/catalog").get_json()["demos"]
+    smoke_paths = {
+        "/api/pa1/prg",
+        "/api/pa6/cca",
+        "/api/pa9/birthday",
+        "/api/pa11/dh",
+        "/api/pa14/hastad",
+        "/api/pa17/signcrypt",
+        "/api/pa20/mpc",
+    }
+    for demo in catalog:
+        if demo["path"] in smoke_paths:
+            data = _post_ok(client, demo["path"], demo["default_payload"])
+            assert any(field in data for field in demo["result_fields"])
+
+
 def test_reduce_validation(client):
     ok = _post_ok(client, "/api/reduce", {"from": "OWF", "to": "MPC", "direction": "forward"})
     assert ok["path"]

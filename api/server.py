@@ -10,6 +10,7 @@ The frontend (frontend/) connects to http://localhost:5000 by default.
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
+from api.catalog import get_demo_catalog
 from crypto_core.common.trace import StepTrace
 from routing.reducer import reduce, describe_chain
 
@@ -44,6 +45,10 @@ def create_app():
                 for e in EDGES
             ],
         })
+
+    @app.route("/api/catalog")
+    def catalog():
+        return jsonify({"demos": get_demo_catalog()})
 
     @app.route("/api/reduce", methods=["POST"])
     def reduce_endpoint():

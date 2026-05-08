@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
-const PRIMITIVES = [
+const FALLBACK_PRIMITIVES = [
   'OWF', 'OWP', 'PRG', 'PRF', 'PRP',
   'MAC', 'CRHF', 'HMAC',
   'CPA-Enc', 'CCA-Enc',
@@ -8,25 +8,90 @@ const PRIMITIVES = [
   'OT', 'SecureAND', 'MPC',
 ]
 
-// Map each primitive to the PA endpoint that demonstrates it.
+// Legacy primitive-to-demo map kept as an explicit reducer contract.
 const PA_ENDPOINTS = {
-  'OWF':       { name: 'PA#1 - DLP OWP',     path: '/api/pa1/owp',     pa: 1 },
-  'OWP':       { name: 'PA#1 - DLP OWP',     path: '/api/pa1/owp',     pa: 1 },
-  'PRG':       { name: 'PA#1 - PRG (HILL)',  path: '/api/pa1/prg',     pa: 1 },
-  'PRF':       { name: 'PA#2 - GGM tree',    path: '/api/pa2/ggm',     pa: 2 },
-  'PRP':       { name: 'PA#4 - modes',       path: '/api/pa4/modes',   pa: 4 },
-  'CPA-Enc':   { name: 'PA#3 - CPA-Enc',     path: '/api/pa3/cpa',     pa: 3 },
-  'MAC':       { name: 'PA#5 - MAC',         path: '/api/pa5/mac',     pa: 5 },
-  'CCA-Enc':   { name: 'PA#6 - CCA-Enc',     path: '/api/pa6/cca',     pa: 6 },
-  'CRHF':      { name: 'PA#8 - DLP hash',    path: '/api/pa8/hash',    pa: 8 },
-  'HMAC':      { name: 'PA#10 - HMAC',       path: '/api/pa10/hmac',   pa: 10 },
-  'PKC':       { name: 'PA#12 - RSA',        path: '/api/pa12/rsa',    pa: 12 },
-  'DigitalSig':{ name: 'PA#15 - signatures', path: '/api/pa15/sign',   pa: 15 },
-  'CCA-PKC':   { name: 'PA#17 - signcrypt',  path: '/api/pa17/signcrypt', pa: 17 },
-  'OT':        { name: 'PA#18 - OT',         path: '/api/pa18/ot',     pa: 18 },
-  'SecureAND': { name: 'PA#19 - secure AND', path: '/api/pa19/and',    pa: 19 },
-  'MPC':       { name: 'PA#20 - MPC',        path: '/api/pa20/mpc',    pa: 20 },
+  'OWF': { name: 'PA#1 - DLP OWP', path: '/api/pa1/owp', pa: 1 },
+  'OWP': { name: 'PA#1 - DLP OWP', path: '/api/pa1/owp', pa: 1 },
+  'PRG': { name: 'PA#1 - PRG (HILL)', path: '/api/pa1/prg', pa: 1 },
+  'PRF': { name: 'PA#2 - GGM tree', path: '/api/pa2/ggm', pa: 2 },
+  'PRP': { name: 'PA#4 - modes', path: '/api/pa4/modes', pa: 4 },
+  'CPA-Enc': { name: 'PA#3 - CPA-Enc', path: '/api/pa3/cpa', pa: 3 },
+  'MAC': { name: 'PA#5 - MAC', path: '/api/pa5/mac', pa: 5 },
+  'CCA-Enc': { name: 'PA#6 - CCA-Enc', path: '/api/pa6/cca', pa: 6 },
+  'CRHF': { name: 'PA#8 - DLP hash', path: '/api/pa8/hash', pa: 8 },
+  'HMAC': { name: 'PA#10 - HMAC', path: '/api/pa10/hmac', pa: 10 },
+  'PKC': { name: 'PA#12 - RSA', path: '/api/pa12/rsa', pa: 12 },
+  'DigitalSig': { name: 'PA#15 - signatures', path: '/api/pa15/sign', pa: 15 },
+  'CCA-PKC': { name: 'PA#17 - signcrypt', path: '/api/pa17/signcrypt', pa: 17 },
+  'OT': { name: 'PA#18 - OT', path: '/api/pa18/ot', pa: 18 },
+  'SecureAND': { name: 'PA#19 - secure AND', path: '/api/pa19/and', pa: 19 },
+  'MPC': { name: 'PA#20 - MPC', path: '/api/pa20/mpc', pa: 20 },
 }
+
+const GUIDED_PRESETS = [
+  {
+    id: 'minicrypt-chain',
+    shortTitle: 'Minicrypt',
+    title: 'Minicrypt Chain',
+    pathLabel: 'OWF → PRG → PRF → PRP → MAC',
+    from: 'OWF',
+    to: 'MAC',
+    foundation: 'DLP',
+    direction: 'forward',
+    demoIds: ['pa1-owp', 'pa1-prg', 'pa2-ggm', 'pa4-modes', 'pa5-mac'],
+    hint: 'One-wayness becomes pseudorandomness, permutations, and authentication.',
+  },
+  {
+    id: 'encryption-hardening',
+    shortTitle: 'CCA',
+    title: 'Encryption Hardening',
+    pathLabel: 'PRF → CPA-Enc → CCA-Enc',
+    from: 'PRF',
+    to: 'CCA-Enc',
+    foundation: 'AES',
+    direction: 'forward',
+    demoIds: ['pa2-ggm', 'pa3-cpa', 'pa6-cca'],
+    hint: 'Run this to see tampering rejected by authentication.',
+  },
+  {
+    id: 'hash-auth',
+    shortTitle: 'Hash/MAC',
+    title: 'Hash/Auth Path',
+    pathLabel: 'CRHF → HMAC → MAC',
+    from: 'CRHF',
+    to: 'MAC',
+    foundation: 'DLP',
+    direction: 'forward',
+    demoIds: ['pa8-hash', 'pa10-hmac', 'pa5-mac', 'pa9-birthday'],
+    hint: 'Collision resistance, keyed hashing, and the birthday bound in one pass.',
+  },
+  {
+    id: 'public-key',
+    shortTitle: 'PKC',
+    title: 'Public-Key Path',
+    pathLabel: 'OWP → PKC → DigitalSig → CCA-PKC',
+    from: 'OWP',
+    to: 'CCA-PKC',
+    foundation: 'DLP',
+    direction: 'forward',
+    demoIds: ['pa1-owp', 'pa12-rsa', 'pa15-sign', 'pa17-signcrypt'],
+    hint: 'Trapdoors, signatures, and public-key tamper rejection.',
+  },
+  {
+    id: 'mpc-stack',
+    shortTitle: 'MPC',
+    title: 'MPC Stack',
+    pathLabel: 'PKC → OT → SecureAND → MPC',
+    from: 'PKC',
+    to: 'MPC',
+    foundation: 'DLP',
+    direction: 'forward',
+    demoIds: ['pa12-rsa', 'pa18-ot', 'pa19-and', 'pa20-mpc'],
+    hint: 'Public-key assumptions lift into secure two-party computation.',
+  },
+]
+
+const CATEGORY_ORDER = ['Minicrypt', 'Hashing', 'Public Key', 'MPC', 'Attack', 'Number Theory']
 
 function defaultPayload(foundation) {
   return {
@@ -37,6 +102,15 @@ function defaultPayload(foundation) {
     message: 'hello world',
     bits: 80,
   }
+}
+
+async function getJson(path) {
+  const resp = await fetch(path)
+  const data = await resp.json()
+  if (!resp.ok) {
+    throw new Error(data?.error || `${path} failed with HTTP ${resp.status}`)
+  }
+  return data
 }
 
 async function postJson(path, payload) {
@@ -52,236 +126,676 @@ async function postJson(path, payload) {
   return data
 }
 
-function hex(bytes) {
-  if (bytes == null) return ''
-  return String(bytes)
+function shortText(value, max = 42) {
+  if (value == null) return 'none'
+  const text = String(value)
+  return text.length > max ? `${text.slice(0, max)}...` : text
 }
 
-function StepTrace({ steps }) {
+function describeValue(value) {
+  if (value == null) return 'none'
+  if (typeof value === 'boolean') return value ? 'yes' : 'no'
+  if (typeof value === 'number') return String(value)
+  if (typeof value === 'string') return shortText(value, 64)
+  if (Array.isArray(value)) return value.slice(0, 3).map((item) => shortText(item, 24)).join(' / ')
+  if (typeof value === 'object') {
+    return Object.entries(value)
+      .slice(0, 3)
+      .map(([key, item]) => `${key}: ${shortText(item, 28)}`)
+      .join(' | ')
+  }
+  return shortText(value, 64)
+}
+
+function fieldLabel(field) {
+  return field
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase())
+}
+
+function theoremLabel(theorem = '') {
+  const compact = theorem
+    .replace('HILL hard-core-bit construction', 'HILL')
+    .replace('HILL hard-core-bit (Blum-Micali for OWP)', 'HILL')
+    .replace('Luby-Rackoff Feistel network', 'Luby-Rackoff')
+    .replace('PRP/PRF switching lemma', 'Switching')
+    .replace('Encrypt-then-MAC', 'EtM')
+    .replace('Mac_k(m) = F_k(m)', 'PRF-MAC')
+    .replace('Hash-then-sign', 'Hash-sign')
+    .replace('Bellare-Micali OT', 'BM OT')
+  return shortText(compact, 22)
+}
+
+function statusFor(demo, result) {
+  if (!result) return { label: 'Ready', tone: 'neutral' }
+  if (result.error) return { label: 'Error', tone: 'bad' }
+  if (result.rejected) return { label: 'Rejected', tone: 'good' }
+  if (result.verify === false) return { label: 'Tamper failed', tone: 'good' }
+  if (result.found) return { label: 'Collision found', tone: 'bad' }
+  if (result.K_eve_alice || result.K_eve_bob) return { label: 'MITM active', tone: 'bad' }
+  if (result.match_original || result.all_identical || result.malleability) return { label: 'Attack works', tone: 'bad' }
+  if (result.different || result.verify === true) return { label: 'Verified', tone: 'good' }
+  if (demo?.tags?.includes('attack')) return { label: 'Attack', tone: 'bad' }
+  return { label: 'OK', tone: 'good' }
+}
+
+function formatResult(demo, result) {
+  if (!result) return []
+  if (result.error) return [{ label: 'Error', value: result.error, copy: result.error }]
+
+  const preferred = [
+    'rejected', 'verify', 'recovered', 'result', 'output_hex', 'digest_hex', 'tag_hex',
+    'found', 'queries', 'expected_2_to_n_over_2', 'match_original', 'different',
+    'all_identical', 'K_alice', 'K_bob', 'K_eve_alice', 'K_eve_bob',
+    'and_gates', 'total_gates', 'malleability',
+  ]
+  const fields = [...new Set([...(demo?.result_fields || []), ...preferred])]
+  return fields
+    .filter((field) => Object.prototype.hasOwnProperty.call(result, field))
+    .slice(0, 6)
+    .map((field) => ({
+      label: fieldLabel(field),
+      value: describeValue(result[field]),
+      copy: describeValue(result[field]),
+    }))
+}
+
+function isInteractiveDemo(demo) {
+  return (demo?.controls || []).length > 0
+}
+
+function isAttackDemo(demo) {
+  return demo?.tags?.includes('attack') || demo?.tags?.includes('hardening')
+}
+
+function Hint({ text, children }) {
+  return (
+    <span className="hint" tabIndex="0">
+      {children || '?'}
+      <span className="hint-bubble">{text}</span>
+    </span>
+  )
+}
+
+function Pill({ children, tone = 'neutral', hint }) {
+  const pill = <span className={`pill pill-${tone}`}>{children}</span>
+  return hint ? <Hint text={hint}>{pill}</Hint> : pill
+}
+
+function CopyButton({ value }) {
+  if (!value) return null
+  return (
+    <Hint text="Copy value">
+      <button
+        type="button"
+        className="copy-button"
+        onClick={() => navigator.clipboard?.writeText(value)}
+        aria-label="Copy value"
+      >
+        copy
+      </button>
+    </Hint>
+  )
+}
+
+function TraceTimeline({ steps }) {
   if (!steps || steps.length === 0) return null
   return (
-    <div className="trace">
-      <h3>Step trace</h3>
-      <ol>
-        {steps.map((s, i) => (
-          <li key={i}>
-            <div className="step-name">{s.name}</div>
-            {s.theorem && <div className="step-theorem">[{s.theorem}, PA#{s.pa_number}]</div>}
-            <div className="step-io">
-              <strong>in:</strong>{' '}
-              {Object.entries(s.inputs).map(([k, v]) => (
-                <span key={k}><code>{k}</code>={hex(v).slice(0, 60)}{hex(v).length > 60 ? '…' : ''} </span>
-              ))}
-            </div>
-            <div className="step-io">
-              <strong>out:</strong>{' '}
-              {Object.entries(s.outputs).map(([k, v]) => (
-                <span key={k}><code>{k}</code>={hex(v).slice(0, 60)}{hex(v).length > 60 ? '…' : ''} </span>
-              ))}
-            </div>
-          </li>
+    <details className="trace" open={steps.length <= 3}>
+      <summary>Trace <span>{steps.length}</span></summary>
+      <div className="trace-rows">
+        {steps.slice(0, 8).map((step, index) => (
+          <div className="trace-row" key={`${step.name}-${index}`}>
+            <strong>{shortText(step.name, 28)}</strong>
+            <Pill tone="accent" hint={step.theorem || `PA#${step.pa_number}`}>
+              PA#{step.pa_number || '-'}
+            </Pill>
+            <code>{describeValue(step.outputs || step.inputs || {})}</code>
+          </div>
         ))}
-      </ol>
-    </div>
-  )
-}
-
-function ColumnBuild({ foundation, primA, output, onUpdate }) {
-  const [seedHex, setSeedHex] = useState('00112233445566778899aabbccddeeff')
-  const [outBytes, setOutBytes] = useState(32)
-
-  async function run() {
-    const ep = PA_ENDPOINTS[primA]
-    if (!ep || !ep.path) {
-      onUpdate({ note: `${primA}: no demo endpoint (foundation-direct view)` })
-      return
-    }
-    try {
-      const data = await postJson(ep.path, {
-        ...defaultPayload(foundation),
-        seed: seedHex,
-        key: seedHex,
-        output_bytes: parseInt(outBytes),
-      })
-      onUpdate(data)
-    } catch (e) {
-      onUpdate({ error: String(e) })
-    }
-  }
-
-  return (
-    <div className="column">
-      <h2>Column 1: Build {primA}</h2>
-      <p className="subtitle">Foundation → {primA} ({foundation})</p>
-      <div className="form">
-        <label>Seed/Key (hex)</label>
-        <input value={seedHex} onChange={(e) => setSeedHex(e.target.value)} />
-        <label>Output bytes</label>
-        <input type="number" value={outBytes} onChange={(e) => setOutBytes(e.target.value)} />
-        <button onClick={run}>Build</button>
       </div>
-      {output && <pre className="result">{JSON.stringify(output, null, 2).slice(0, 2000)}</pre>}
-      {output?.trace && <StepTrace steps={output.trace} />}
-    </div>
+    </details>
   )
 }
 
-function ColumnReduce({ foundation, primA, primB, chain, buildOutput, output, onUpdate }) {
-  async function run() {
-    if (!chain) {
-      onUpdate({ error: 'Reduction chain has not loaded yet' })
-      return
-    }
-    if (!chain.path) {
-      onUpdate({ chain, demos: [], note: 'No reducer path is available for this pair' })
-      return
-    }
+function EvidenceCard({ demo, result, label }) {
+  if (!result) return null
+  const status = statusFor(demo, result)
+  const rows = formatResult(demo, result)
+  return (
+    <section className="evidence-card">
+      <div className="card-head">
+        <div>
+          <span className="micro">PA#{demo?.pa || '-'} · {demo?.primitive || label}</span>
+          <h3>{label || demo?.title}</h3>
+        </div>
+        <Pill tone={status.tone} hint={demo?.claim}>{status.label}</Pill>
+      </div>
+      <div className="evidence-rows">
+        {rows.map((row) => (
+          <div className="evidence-row" key={row.label}>
+            <span>{row.label}</span>
+            <code>{row.value}</code>
+            <CopyButton value={row.copy} />
+          </div>
+        ))}
+      </div>
+      <TraceTimeline steps={result.trace} />
+    </section>
+  )
+}
+
+function ErrorBanner({ message }) {
+  if (!message) return null
+  return <div className="error-banner">{message}</div>
+}
+
+function buildLineage(chain, fallbackFrom, fallbackTo) {
+  if (!chain?.path) return { nodes: [fallbackFrom, fallbackTo].filter(Boolean), edges: [] }
+  if (chain.path.length === 0) return { nodes: [fallbackFrom || fallbackTo].filter(Boolean), edges: [] }
+  const nodes = [chain.path[0].src]
+  for (const edge of chain.path) nodes.push(edge.dst)
+  return { nodes, edges: chain.path }
+}
+
+function LineageRail({ chain, from, to, active }) {
+  const { nodes, edges } = buildLineage(chain, from, to)
+  if (!nodes.length) return <section className="lineage empty">No path</section>
+  return (
+    <section className="lineage">
+      <div className="section-head">
+        <h2>Lineage</h2>
+        <Pill hint="Shortest path returned by /api/reduce">
+          {edges.length ? `${edges.length} hops` : 'identity'}
+        </Pill>
+      </div>
+      <div className="lineage-rail" aria-label="Reduction lineage">
+        {nodes.map((node, index) => {
+          const edge = edges[index]
+          return (
+            <div className="lineage-step" key={`${node}-${index}`}>
+              <div className={`node ${active ? 'active' : ''}`}>{node}</div>
+              {edge && (
+                <div className="edge">
+                  <div className="connector" />
+                  <Hint text={`${edge.theorem}. ${edge.claim}`}>
+                    <span className="theorem-chip">{theoremLabel(edge.theorem)}</span>
+                  </Hint>
+                  <Pill tone={edge.direction === 'forward' ? 'good' : 'accent'} hint={edge.claim}>
+                    PA#{edge.pa}
+                  </Pill>
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+function ControlInput({ control, value, onChange }) {
+  if (control.type === 'boolean') {
+    return (
+      <label className="check-row">
+        <input type="checkbox" checked={Boolean(value)} onChange={(e) => onChange(e.target.checked)} />
+        <span>{control.label}</span>
+        <Hint text="Toggle the demo condition" />
+      </label>
+    )
+  }
+  if (control.type === 'select') {
+    return (
+      <label>
+        {control.label}
+        <select value={value} onChange={(e) => onChange(normalizeControlValue(e.target.value, control))}>
+          {control.options.map((option) => <option key={option} value={option}>{String(option)}</option>)}
+        </select>
+      </label>
+    )
+  }
+  return (
+    <label>
+      {control.label}
+      <input
+        type={control.type === 'number' ? 'number' : 'text'}
+        min={control.min}
+        max={control.max}
+        value={value ?? ''}
+        onChange={(e) => onChange(normalizeControlValue(e.target.value, control))}
+      />
+    </label>
+  )
+}
+
+function normalizeControlValue(value, control) {
+  if (control.type === 'number') return Number(value)
+  if (control.type === 'select' && control.options?.every((option) => typeof option === 'number')) return Number(value)
+  return value
+}
+
+function DemoRunnerTile({ demo, payload, result, busy, onPayloadChange, onRun, expanded = false }) {
+  const controls = demo.controls || []
+  const showControls = expanded || controls.length <= 3
+  return (
+    <section className={`demo-tile ${isAttackDemo(demo) ? 'interactive-tile' : ''}`}>
+      <div className="tile-head">
+        <span className="micro">PA#{demo.pa}</span>
+        <Pill tone={demo.tags.includes('attack') ? 'bad' : demo.tags.includes('hardening') ? 'good' : 'neutral'} hint={demo.claim}>
+          {demo.primitive}
+        </Pill>
+      </div>
+      <h3>{demo.title}</h3>
+      {controls.length > 0 && showControls && (
+        <div className="mini-form visible">
+          {controls.map((control) => (
+            <ControlInput
+              key={control.name}
+              control={control}
+              value={payload[control.name]}
+              onChange={(value) => onPayloadChange(demo, control.name, value)}
+            />
+          ))}
+        </div>
+      )}
+      <div className="tile-actions">
+        <button type="button" onClick={() => onRun(demo)} disabled={busy}>
+          {busy ? 'Running' : 'Run'}
+        </button>
+        {controls.length > 3 && !expanded && (
+          <details>
+            <summary>Inputs</summary>
+            <div className="mini-form">
+              {controls.map((control) => (
+                <ControlInput
+                  key={control.name}
+                  control={control}
+                  value={payload[control.name]}
+                  onChange={(value) => onPayloadChange(demo, control.name, value)}
+                />
+              ))}
+            </div>
+          </details>
+        )}
+      </div>
+      <EvidenceCard demo={demo} result={result} label={demo.title} />
+    </section>
+  )
+}
+
+function PresetRail({ selectedId, onSelect }) {
+  return (
+    <aside className="preset-rail">
+      <span className="micro">Paths</span>
+      {GUIDED_PRESETS.map((preset) => (
+        <button
+          type="button"
+          key={preset.id}
+          className={preset.id === selectedId ? 'selected' : ''}
+          onClick={() => onSelect(preset.id)}
+        >
+          <strong>{preset.shortTitle}</strong>
+          <small>{preset.pathLabel}</small>
+          <Hint text={preset.hint} />
+        </button>
+      ))}
+    </aside>
+  )
+}
+
+function CustomPath({ primitives, state, setters, onRun, busy }) {
+  const { foundation, primA, primB, direction } = state
+  return (
+    <details className="custom-path">
+      <summary>Custom path</summary>
+      <div className="custom-grid">
+        <label>
+          Foundation
+          <select value={foundation} onChange={(e) => setters.setFoundation(e.target.value)}>
+            <option value="AES">AES-128</option>
+            <option value="DLP">DLP</option>
+          </select>
+        </label>
+        <label>
+          From
+          <select value={primA} onChange={(e) => setters.setPrimA(e.target.value)}>
+            {primitives.map((primitive) => <option key={primitive} value={primitive}>{primitive}</option>)}
+          </select>
+        </label>
+        <label>
+          To
+          <select value={primB} onChange={(e) => setters.setPrimB(e.target.value)}>
+            {primitives.map((primitive) => <option key={primitive} value={primitive}>{primitive}</option>)}
+          </select>
+        </label>
+        <label>
+          Direction <Hint text="Forward follows construction arrows; any can use reverse reductions." />
+          <select value={direction} onChange={(e) => setters.setDirection(e.target.value)}>
+            <option value="forward">Forward</option>
+            <option value="any">Any</option>
+          </select>
+        </label>
+        <button type="button" onClick={onRun} disabled={busy}>Run</button>
+      </div>
+    </details>
+  )
+}
+
+function useDemoRunner() {
+  const [payloads, setPayloads] = useState({})
+  const [results, setResults] = useState({})
+  const [busyId, setBusyId] = useState('')
+
+  function payloadFor(demo) {
+    return payloads[demo.id] || demo.default_payload || {}
+  }
+
+  function setPayloadField(demo, name, value) {
+    setPayloads((current) => ({
+      ...current,
+      [demo.id]: { ...payloadFor(demo), [name]: value },
+    }))
+  }
+
+  async function runDemo(demo) {
+    setBusyId(demo.id)
     try {
-      const demos = []
-      if (chain.path.length === 0) {
-        const ep = PA_ENDPOINTS[primB]
-        if (ep?.path) {
-          demos.push({ primitive: primB, endpoint: ep.path, result: await postJson(ep.path, defaultPayload(foundation)) })
-        }
-      } else {
-        for (const edge of chain.path) {
-          const ep = PA_ENDPOINTS[edge.dst]
-          if (!ep?.path) {
-            demos.push({ primitive: edge.dst, skipped: true, reason: 'No demo endpoint' })
-            continue
-          }
-          const result = await postJson(ep.path, {
-            ...defaultPayload(foundation),
-            source: primA,
-            target: primB,
-            theorem: edge.theorem,
-            black_box_from_column_1: buildOutput ? 'available' : 'not_built',
-          })
-          demos.push({ primitive: edge.dst, theorem: edge.theorem, endpoint: ep.path, result })
-        }
-      }
-      onUpdate({ chain, black_box_input: buildOutput || null, demos })
-    } catch (e) {
-      onUpdate({ error: String(e) })
+      const data = await postJson(demo.path, payloadFor(demo))
+      setResults((current) => ({ ...current, [demo.id]: data }))
+    } catch (err) {
+      setResults((current) => ({ ...current, [demo.id]: { error: String(err) } }))
+    } finally {
+      setBusyId('')
     }
   }
 
+  return { payloadFor, setPayloadField, runDemo, results, busyId }
+}
+
+function AttackLab({ catalog }) {
+  const demos = catalog.filter((demo) => isAttackDemo(demo) && isInteractiveDemo(demo))
+  const { payloadFor, setPayloadField, runDemo, results, busyId } = useDemoRunner()
+
+  if (demos.length === 0) return null
   return (
-    <div className="column">
-      <h2>Column 2: Reduce to {primB}</h2>
-      <p className="subtitle">{primA} → {primB}</p>
-      <button onClick={run}>Reduce</button>
-      {output && <pre className="result">{JSON.stringify(output, null, 2).slice(0, 2000)}</pre>}
-      {output?.trace && <StepTrace steps={output.trace} />}
-    </div>
+    <section className="attack-lab">
+      <div className="section-head">
+        <h2>Interactive attacks</h2>
+        <Pill tone="bad" hint="Edit inputs, toggle tamper/MITM modes, then rerun.">
+          {demos.length} demos
+        </Pill>
+      </div>
+      <div className="demo-grid attack-grid">
+        {demos.map((demo) => (
+          <DemoRunnerTile
+            key={demo.id}
+            demo={demo}
+            payload={payloadFor(demo)}
+            result={results[demo.id]}
+            busy={busyId === demo.id}
+            onPayloadChange={setPayloadField}
+            onRun={runDemo}
+            expanded
+          />
+        ))}
+      </div>
+    </section>
   )
 }
 
-function ProofPanel({ chain }) {
-  if (!chain) return null
+function AllDemos({ catalog }) {
+  const [filter, setFilter] = useState('All')
+  const { payloadFor, setPayloadField, runDemo, results, busyId } = useDemoRunner()
+  const categories = useMemo(() => ['All', ...CATEGORY_ORDER.filter((cat) => catalog.some((demo) => demo.category === cat))], [catalog])
+  const visibleCatalog = catalog.filter((demo) => filter === 'All' || demo.category === filter)
+
   return (
-    <div className="proof">
-      <h3>Reduction chain summary</h3>
-      <p>{chain.summary}</p>
-      {chain.path && (
-        <ol>
-          {chain.path.map((edge, i) => (
-            <li key={i}>
-              <strong>{edge.src} → {edge.dst}</strong> via {edge.theorem} (PA#{edge.pa})
-              <div className="claim">{edge.claim}</div>
-            </li>
+    <section className="all-demos">
+      <div className="section-head">
+        <h2>All demos</h2>
+        <div className="filter-row">
+          {categories.map((category) => (
+            <button
+              type="button"
+              key={category}
+              className={filter === category ? 'selected' : ''}
+              onClick={() => setFilter(category)}
+            >
+              {category}
+            </button>
           ))}
-        </ol>
-      )}
-    </div>
+        </div>
+      </div>
+      <div className="demo-grid">
+        {visibleCatalog.map((demo) => (
+          <DemoRunnerTile
+            key={demo.id}
+            demo={demo}
+            payload={payloadFor(demo)}
+            result={results[demo.id]}
+            busy={busyId === demo.id}
+            onPayloadChange={setPayloadField}
+            onRun={runDemo}
+            expanded={isAttackDemo(demo)}
+          />
+        ))}
+      </div>
+    </section>
   )
 }
 
-export default function App() {
+function DemoBoard({ catalog, catalogById, catalogByPrimitive, primitives, health, loadError }) {
+  const [selectedId, setSelectedId] = useState(GUIDED_PRESETS[0].id)
+  const [chain, setChain] = useState(null)
+  const [evidence, setEvidence] = useState([])
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
   const [foundation, setFoundation] = useState('AES')
   const [primA, setPrimA] = useState('PRG')
   const [primB, setPrimB] = useState('PRF')
   const [direction, setDirection] = useState('forward')
-  const [build1, setBuild1] = useState(null)
-  const [build2, setBuild2] = useState(null)
-  const [chain, setChain] = useState(null)
+  const didAutoRun = useRef(false)
+  const preset = GUIDED_PRESETS.find((item) => item.id === selectedId) || GUIDED_PRESETS[0]
+
+  async function runPreset(nextPreset = preset) {
+    setBusy(true)
+    setError('')
+    setEvidence([])
+    try {
+      const nextChain = await postJson('/api/reduce', {
+        from: nextPreset.from,
+        to: nextPreset.to,
+        direction: nextPreset.direction,
+      })
+      setChain(nextChain)
+      const nextEvidence = []
+      for (const demoId of nextPreset.demoIds) {
+        const demo = catalogById.get(demoId)
+        if (!demo) continue
+        const data = await postJson(demo.path, {
+          ...demo.default_payload,
+          foundation: demo.default_payload?.foundation || nextPreset.foundation,
+        })
+        nextEvidence.push({ demo, result: data })
+      }
+      setEvidence(nextEvidence)
+    } catch (err) {
+      setError(String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function runCustom() {
+    setBusy(true)
+    setError('')
+    setEvidence([])
+    try {
+      const nextChain = await postJson('/api/reduce', { from: primA, to: primB, direction })
+      setChain(nextChain)
+      const customEvidence = []
+      const sourceEndpoint = PA_ENDPOINTS[primA]
+      let sourceResult = null
+      if (sourceEndpoint?.path) {
+        sourceResult = await postJson(sourceEndpoint.path, defaultPayload(foundation))
+        customEvidence.push({
+          demo: catalogByPrimitive.get(primA) || sourceEndpoint,
+          result: sourceResult,
+        })
+      }
+
+      if (nextChain.path) {
+        const edges = nextChain.path.length === 0 ? [{ dst: primB, theorem: 'identity' }] : nextChain.path
+        for (const edge of edges) {
+          const endpoint = PA_ENDPOINTS[edge.dst]
+          if (!endpoint?.path) continue
+          const result = await postJson(endpoint.path, {
+            ...defaultPayload(foundation),
+            source: primA,
+            target: primB,
+            theorem: edge.theorem,
+            black_box_from_column_1: sourceResult ? 'available' : 'not_built',
+          })
+          customEvidence.push({
+            demo: catalogByPrimitive.get(edge.dst) || endpoint,
+            result,
+          })
+        }
+      }
+      setEvidence(customEvidence)
+    } catch (err) {
+      setError(String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function reset() {
+    setChain(null)
+    setEvidence([])
+    setError('')
+  }
+
+  function choosePreset(id) {
+    const nextPreset = GUIDED_PRESETS.find((item) => item.id === id)
+    setSelectedId(id)
+    if (nextPreset) runPreset(nextPreset)
+  }
 
   useEffect(() => {
-    fetch('/api/reduce', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: primA, to: primB, direction }),
-    })
-      .then((r) => r.json())
-      .then(setChain)
-      .catch(() => setChain({ path: null, summary: '(server unreachable)' }))
-  }, [primA, primB, direction])
+    if (catalog.length > 0 && !didAutoRun.current) {
+      didAutoRun.current = true
+      runPreset(preset)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [catalog.length])
 
   return (
-    <div className="app">
-      <header>
-        <h1>CS8.401 Minicrypt Clique Explorer</h1>
-        <div className="controls">
-          <label>
-            Foundation:
-            <select value={foundation} onChange={(e) => setFoundation(e.target.value)}>
-              <option value="AES">AES-128 (PRP)</option>
-              <option value="DLP">DLP (g^x mod p)</option>
-            </select>
-          </label>
-          <label>
-            Direction:
-            <select value={direction} onChange={(e) => setDirection(e.target.value)}>
-              <option value="forward">Forward (A → B)</option>
-              <option value="any">Any (allow B → A)</option>
-            </select>
-          </label>
-        </div>
-      </header>
-
-      <main>
-        <div className="dropdowns">
-          <label>
-            Source A:
-            <select value={primA} onChange={(e) => setPrimA(e.target.value)}>
-              {PRIMITIVES.map((p) => <option key={p} value={p}>{p}</option>)}
-            </select>
-          </label>
-          <label>
-            Target B:
-            <select value={primB} onChange={(e) => setPrimB(e.target.value)}>
-              {PRIMITIVES.map((p) => <option key={p} value={p}>{p}</option>)}
-            </select>
-          </label>
+    <main className="demo-board">
+      <PresetRail selectedId={selectedId} onSelect={choosePreset} />
+      <section className="run-panel">
+        <div className="topbar">
+          <div>
+            <span className="micro">CS8.401 PA#0</span>
+            <h1>Minicrypt Clique</h1>
+          </div>
+          <div className="status-strip">
+            <Pill tone={health === 'ok' ? 'good' : health === 'error' ? 'bad' : 'neutral'} hint="Flask API health">
+              API {health}
+            </Pill>
+            <Pill hint="Runnable catalog entries">{catalog.length} demos</Pill>
+          </div>
         </div>
 
-        <div className="columns">
-          <ColumnBuild
-            foundation={foundation}
-            primA={primA}
-            output={build1}
-            onUpdate={setBuild1}
-          />
-          <ColumnReduce
-            foundation={foundation}
-            primA={primA}
-            primB={primB}
-            chain={chain}
-            buildOutput={build1}
-            output={build2}
-            onUpdate={setBuild2}
-          />
-        </div>
+        <ErrorBanner message={loadError || error} />
 
-        <ProofPanel chain={chain} />
-      </main>
+        <section className="run-hero">
+          <div>
+            <h2>{preset.shortTitle}</h2>
+            <code>{preset.pathLabel}</code>
+          </div>
+          <div className="run-actions">
+            <button type="button" className="primary-action" onClick={() => runPreset()} disabled={busy}>
+              {busy ? 'Running' : 'Run'}
+            </button>
+            <button type="button" onClick={reset}>Reset</button>
+          </div>
+        </section>
 
-      <footer>
-        <small>
-          PA#0 web explorer — backend: <code>localhost:5000</code>.
-          All intermediate values are real outputs from the PA#1–#20 implementations.
-        </small>
-      </footer>
-    </div>
+        <LineageRail chain={chain} from={preset.from} to={preset.to} active={evidence.length > 0} />
+
+        <CustomPath
+          primitives={primitives}
+          state={{ foundation, primA, primB, direction }}
+          setters={{ setFoundation, setPrimA, setPrimB, setDirection }}
+          onRun={runCustom}
+          busy={busy}
+        />
+
+        <section className="evidence">
+          <div className="section-head">
+            <h2>Evidence</h2>
+            <Pill hint="Formatted backend outputs; no raw JSON is displayed">
+              {evidence.length || 0} cards
+            </Pill>
+          </div>
+          {evidence.length === 0 && <div className="empty-panel">Run a path.</div>}
+          <div className="evidence-grid">
+            {evidence.map(({ demo, result }, index) => (
+              <EvidenceCard
+                key={`${demo?.id || demo?.path}-${index}`}
+                demo={demo}
+                result={result}
+                label={demo?.title || demo?.name}
+              />
+            ))}
+          </div>
+        </section>
+
+        <AttackLab catalog={catalog} />
+        <AllDemos catalog={catalog} />
+      </section>
+    </main>
+  )
+}
+
+export default function App() {
+  const [health, setHealth] = useState('checking')
+  const [catalog, setCatalog] = useState([])
+  const [clique, setClique] = useState({ primitives: FALLBACK_PRIMITIVES, edges: [] })
+  const [loadError, setLoadError] = useState('')
+
+  useEffect(() => {
+    getJson('/api/health')
+      .then(() => setHealth('ok'))
+      .catch(() => setHealth('error'))
+
+    getJson('/api/catalog')
+      .then((data) => setCatalog(data.demos || []))
+      .catch((err) => setLoadError(String(err)))
+
+    getJson('/api/clique')
+      .then(setClique)
+      .catch(() => setClique({ primitives: FALLBACK_PRIMITIVES, edges: [] }))
+  }, [])
+
+  const catalogById = useMemo(() => new Map(catalog.map((demo) => [demo.id, demo])), [catalog])
+  const catalogByPrimitive = useMemo(() => {
+    const map = new Map()
+    for (const demo of catalog) {
+      if (!map.has(demo.primitive)) map.set(demo.primitive, demo)
+    }
+    return map
+  }, [catalog])
+
+  return (
+    <DemoBoard
+      catalog={catalog}
+      catalogById={catalogById}
+      catalogByPrimitive={catalogByPrimitive}
+      primitives={clique.primitives || FALLBACK_PRIMITIVES}
+      health={health}
+      loadError={loadError}
+    />
   )
 }
