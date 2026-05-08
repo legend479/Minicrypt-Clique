@@ -70,6 +70,72 @@ def create_app():
             "summary": describe_chain(chain),
         })
 
+    @app.route("/api/custom/owf_chain", methods=["POST"])
+    def custom_owf_chain():
+        from crypto_core.common.trace import StepTrace
+        from crypto_core.minicrypt.custom_owf import user_owf_from_payload
+        from crypto_core.minicrypt.prg import (
+            HILLPRG, monobit_frequency_test, runs_test, serial_test_lite,
+        )
+        from crypto_core.minicrypt.prf_ggm import GGMTreePRF
+        from crypto_core.minicrypt.prp_feistel import LubyRackoffPRP
+        from crypto_core.minicrypt.mac import CBCMAC
+
+        data = request.get_json(force=True, silent=True) or {}
+        owf = user_owf_from_payload(data)
+        seed_hex = data.get("seed", "00112233445566778899aabbccddeeff")
+        output_bytes = int(data.get("output_bytes", 16))
+        input_bits = int(data.get("input_bits", 4))
+        message = data.get("message", "custom owf").encode("utf-8")
+
+        seed_len = owf.domain_bits // 8 if owf.domain_bits % 8 == 0 else (owf.domain_bits + 7) // 8
+        seed = bytes.fromhex(seed_hex)[:seed_len].ljust(seed_len, b"\x00")
+        seed_int = int.from_bytes(seed, "big") & ((1 << owf.domain_bits) - 1)
+
+        trace = StepTrace()
+        owf_y = owf.evaluate(seed_int, trace=trace)
+
+        prg = HILLPRG(owf)
+        prg.seed(seed)
+        prg_out = prg.next_bits(output_bytes, trace=trace)
+
+        prf = GGMTreePRF(HILLPRG(owf), input_bits=input_bits, key_bytes=seed_len)
+        prf_input = int(data.get("prf_input", 3)).to_bytes(seed_len, "big")
+        prf_out = prf.evaluate(seed, prf_input, trace=trace)
+
+        prp = LubyRackoffPRP(prf, rounds=4)
+        prp_input = (seed + prf_out)[:prp.block_size].ljust(prp.block_size, b"\x00")
+        prp_out = prp.evaluate(seed, prp_input, trace=trace)
+        prp_round_trip = prp.invert(seed, prp_out) == prp_input
+
+        mac = CBCMAC(prp)
+        tag = mac.mac(seed, message, trace=trace)
+        verify = mac.verify(seed, message, tag)
+
+        sample = prg_out if len(prg_out) >= 8 else (prg_out * 8)[:8]
+        p_freq, ok_freq = monobit_frequency_test(sample)
+        p_runs, ok_runs = runs_test(sample)
+        chi, ok_serial = serial_test_lite(sample)
+
+        return jsonify({
+            "foundation": owf.diagnostics(),
+            "seed_hex": seed.hex(),
+            "owf_output": owf_y,
+            "prg_output_hex": prg_out.hex(),
+            "prf_output_hex": prf_out.hex(),
+            "prp_output_hex": prp_out.hex(),
+            "prp_round_trip": prp_round_trip,
+            "mac_tag_hex": tag.hex(),
+            "mac_verify": verify,
+            "built": ["OWF", "PRG", "PRF", "PRP", "MAC"],
+            "tests": {
+                "monobit_frequency": {"p_value": p_freq, "passed": ok_freq},
+                "runs": {"p_value": p_runs, "passed": ok_runs},
+                "serial_chi": {"chi": chi, "passed": ok_serial},
+            },
+            "trace": trace.to_json(),
+        })
+
     # ------------ PA#1: PRG ------------
 
     @app.route("/api/pa1/owp", methods=["POST"])

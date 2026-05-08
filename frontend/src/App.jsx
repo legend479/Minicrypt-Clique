@@ -174,6 +174,7 @@ function statusFor(demo, result) {
   if (result.found) return { label: 'Collision found', tone: 'bad' }
   if (result.K_eve_alice || result.K_eve_bob) return { label: 'MITM active', tone: 'bad' }
   if (result.match_original || result.all_identical || result.malleability) return { label: 'Attack works', tone: 'bad' }
+  if (result.mac_verify || result.prp_round_trip) return { label: 'Built', tone: 'good' }
   if (result.different || result.verify === true) return { label: 'Verified', tone: 'good' }
   if (demo?.tags?.includes('attack')) return { label: 'Attack', tone: 'bad' }
   return { label: 'OK', tone: 'good' }
@@ -187,7 +188,8 @@ function formatResult(demo, result) {
     'rejected', 'verify', 'recovered', 'result', 'output_hex', 'digest_hex', 'tag_hex',
     'found', 'queries', 'expected_2_to_n_over_2', 'match_original', 'different',
     'all_identical', 'K_alice', 'K_bob', 'K_eve_alice', 'K_eve_bob',
-    'and_gates', 'total_gates', 'malleability',
+    'built', 'owf_output', 'prg_output_hex', 'prf_output_hex', 'prp_round_trip',
+    'mac_tag_hex', 'mac_verify', 'and_gates', 'total_gates', 'malleability',
   ]
   const fields = [...new Set([...(demo?.result_fields || []), ...preferred])]
   return fields
@@ -443,11 +445,33 @@ function PresetRail({ selectedId, onSelect }) {
   )
 }
 
-function CustomPath({ primitives, state, setters, onRun, busy }) {
-  const { foundation, primA, primB, direction } = state
+function PanelTabs({ activePanel, onChange }) {
+  const tabs = [
+    ['guided', 'Guided'],
+    ['custom-owf', 'Custom OWF'],
+    ['attacks', 'Attacks'],
+    ['catalog', 'Catalog'],
+    ['custom-path', 'Custom Path'],
+  ]
   return (
-    <details className="custom-path">
-      <summary>Custom path</summary>
+    <nav className="panel-tabs" aria-label="Demo panels">
+      {tabs.map(([id, label]) => (
+        <button
+          type="button"
+          key={id}
+          className={activePanel === id ? 'selected' : ''}
+          onClick={() => onChange(id)}
+        >
+          {label}
+        </button>
+      ))}
+    </nav>
+  )
+}
+
+function CustomPath({ primitives, state, setters, onRun, busy, expanded = false }) {
+  const { foundation, primA, primB, direction } = state
+  const content = (
       <div className="custom-grid">
         <label>
           Foundation
@@ -477,7 +501,76 @@ function CustomPath({ primitives, state, setters, onRun, busy }) {
         </label>
         <button type="button" onClick={onRun} disabled={busy}>Run</button>
       </div>
+  )
+  if (expanded) {
+    return (
+      <section className="custom-path custom-path-panel">
+        <div className="section-head">
+          <h2>Custom path</h2>
+          <Pill hint="Pick any source and target primitive, then run the reducer.">Reducer</Pill>
+        </div>
+        {content}
+      </section>
+    )
+  }
+  return (
+    <details className="custom-path">
+      <summary>Custom path</summary>
+      {content}
     </details>
+  )
+}
+
+function CustomOWFWorkspace({ demo, payload, result, busy, onPayloadChange, onRun }) {
+  if (!demo) return null
+  const core = ['name', 'kind', 'domain_bits', 'a', 'b', 'c', 'xor_mask', 'hc_bit']
+  const run = ['seed', 'output_bytes', 'input_bits', 'prf_input', 'message']
+  const controls = new Map((demo.controls || []).map((control) => [control.name, control]))
+  return (
+    <section className="custom-owf">
+      <div className="section-head">
+        <div>
+          <h2>Custom OWF</h2>
+          <code>OWF → PRG → PRF → PRP → MAC</code>
+        </div>
+        <Pill tone="accent" hint="Define a bounded deterministic map that implements the OWF interface.">
+          Foundation
+        </Pill>
+      </div>
+      <div className="owf-grid">
+        <div className="owf-controls">
+          <span className="micro">Map</span>
+          <div className="mini-form visible">
+            {core.map((name) => controls.get(name)).filter(Boolean).map((control) => (
+              <ControlInput
+                key={control.name}
+                control={control}
+                value={payload[control.name]}
+                onChange={(value) => onPayloadChange(demo, control.name, value)}
+              />
+            ))}
+          </div>
+          <details>
+            <summary>Run inputs</summary>
+            <div className="mini-form">
+              {run.map((name) => controls.get(name)).filter(Boolean).map((control) => (
+                <ControlInput
+                  key={control.name}
+                  control={control}
+                  value={payload[control.name]}
+                  onChange={(value) => onPayloadChange(demo, control.name, value)}
+                />
+              ))}
+            </div>
+          </details>
+          <button type="button" className="primary-action" onClick={() => onRun(demo)} disabled={busy}>
+            {busy ? 'Building' : 'Use foundation'}
+          </button>
+        </div>
+        <EvidenceCard demo={demo} result={result} label="Custom OWF build" />
+        {!result && <div className="empty-panel">Tune the map, then build.</div>}
+      </div>
+    </section>
   )
 }
 
@@ -585,6 +678,7 @@ function AllDemos({ catalog }) {
 }
 
 function DemoBoard({ catalog, catalogById, catalogByPrimitive, primitives, health, loadError }) {
+  const [activePanel, setActivePanel] = useState('guided')
   const [selectedId, setSelectedId] = useState(GUIDED_PRESETS[0].id)
   const [chain, setChain] = useState(null)
   const [evidence, setEvidence] = useState([])
@@ -594,8 +688,10 @@ function DemoBoard({ catalog, catalogById, catalogByPrimitive, primitives, healt
   const [primA, setPrimA] = useState('PRG')
   const [primB, setPrimB] = useState('PRF')
   const [direction, setDirection] = useState('forward')
+  const customRunner = useDemoRunner()
   const didAutoRun = useRef(false)
   const preset = GUIDED_PRESETS.find((item) => item.id === selectedId) || GUIDED_PRESETS[0]
+  const customOWFDemo = catalogById.get('custom-owf-chain')
 
   async function runPreset(nextPreset = preset) {
     setBusy(true)
@@ -670,6 +766,21 @@ function DemoBoard({ catalog, catalogById, catalogByPrimitive, primitives, healt
     }
   }
 
+  async function runCustomOWF(demo) {
+    setBusy(true)
+    setError('')
+    setEvidence([])
+    try {
+      const nextChain = await postJson('/api/reduce', { from: 'OWF', to: 'MAC', direction: 'forward' })
+      setChain(nextChain)
+      await customRunner.runDemo(demo)
+    } catch (err) {
+      setError(String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   function reset() {
     setChain(null)
     setEvidence([])
@@ -692,7 +803,6 @@ function DemoBoard({ catalog, catalogById, catalogByPrimitive, primitives, healt
 
   return (
     <main className="demo-board">
-      <PresetRail selectedId={selectedId} onSelect={choosePreset} />
       <section className="run-panel">
         <div className="topbar">
           <div>
@@ -707,53 +817,107 @@ function DemoBoard({ catalog, catalogById, catalogByPrimitive, primitives, healt
           </div>
         </div>
 
+        <PanelTabs activePanel={activePanel} onChange={setActivePanel} />
         <ErrorBanner message={loadError || error} />
 
-        <section className="run-hero">
-          <div>
-            <h2>{preset.shortTitle}</h2>
-            <code>{preset.pathLabel}</code>
-          </div>
-          <div className="run-actions">
-            <button type="button" className="primary-action" onClick={() => runPreset()} disabled={busy}>
-              {busy ? 'Running' : 'Run'}
-            </button>
-            <button type="button" onClick={reset}>Reset</button>
-          </div>
-        </section>
+        {activePanel === 'guided' && (
+          <section className="panel-surface guided-panel">
+            <PresetRail selectedId={selectedId} onSelect={choosePreset} />
+            <div className="guided-workspace">
+              <section className="run-hero">
+                <div>
+                  <h2>{preset.shortTitle}</h2>
+                  <code>{preset.pathLabel}</code>
+                </div>
+                <div className="run-actions">
+                  <button type="button" className="primary-action" onClick={() => runPreset()} disabled={busy}>
+                    {busy ? 'Running' : 'Run'}
+                  </button>
+                  <button type="button" onClick={reset}>Reset</button>
+                </div>
+              </section>
 
-        <LineageRail chain={chain} from={preset.from} to={preset.to} active={evidence.length > 0} />
+              <LineageRail chain={chain} from={preset.from} to={preset.to} active={evidence.length > 0} />
 
-        <CustomPath
-          primitives={primitives}
-          state={{ foundation, primA, primB, direction }}
-          setters={{ setFoundation, setPrimA, setPrimB, setDirection }}
-          onRun={runCustom}
-          busy={busy}
-        />
+              <section className="evidence">
+                <div className="section-head">
+                  <h2>Evidence</h2>
+                  <Pill hint="Formatted backend outputs; no raw JSON is displayed">
+                    {evidence.length || 0} cards
+                  </Pill>
+                </div>
+                {evidence.length === 0 && <div className="empty-panel">Run a path.</div>}
+                <div className="evidence-grid">
+                  {evidence.map(({ demo, result }, index) => (
+                    <EvidenceCard
+                      key={`${demo?.id || demo?.path}-${index}`}
+                      demo={demo}
+                      result={result}
+                      label={demo?.title || demo?.name}
+                    />
+                  ))}
+                </div>
+              </section>
+            </div>
+          </section>
+        )}
 
-        <section className="evidence">
-          <div className="section-head">
-            <h2>Evidence</h2>
-            <Pill hint="Formatted backend outputs; no raw JSON is displayed">
-              {evidence.length || 0} cards
-            </Pill>
-          </div>
-          {evidence.length === 0 && <div className="empty-panel">Run a path.</div>}
-          <div className="evidence-grid">
-            {evidence.map(({ demo, result }, index) => (
-              <EvidenceCard
-                key={`${demo?.id || demo?.path}-${index}`}
-                demo={demo}
-                result={result}
-                label={demo?.title || demo?.name}
-              />
-            ))}
-          </div>
-        </section>
+        {activePanel === 'custom-owf' && (
+          <section className="panel-surface">
+            <LineageRail chain={chain} from="OWF" to="MAC" active={Boolean(customOWFDemo && customRunner.results[customOWFDemo.id])} />
+            <CustomOWFWorkspace
+              demo={customOWFDemo}
+              payload={customOWFDemo ? customRunner.payloadFor(customOWFDemo) : {}}
+              result={customOWFDemo ? customRunner.results[customOWFDemo.id] : null}
+              busy={busy || customRunner.busyId === customOWFDemo?.id}
+              onPayloadChange={customRunner.setPayloadField}
+              onRun={runCustomOWF}
+            />
+          </section>
+        )}
 
-        <AttackLab catalog={catalog} />
-        <AllDemos catalog={catalog} />
+        {activePanel === 'attacks' && (
+          <section className="panel-surface">
+            <AttackLab catalog={catalog} />
+          </section>
+        )}
+
+        {activePanel === 'catalog' && (
+          <section className="panel-surface">
+            <AllDemos catalog={catalog} />
+          </section>
+        )}
+
+        {activePanel === 'custom-path' && (
+          <section className="panel-surface">
+            <CustomPath
+              primitives={primitives}
+              state={{ foundation, primA, primB, direction }}
+              setters={{ setFoundation, setPrimA, setPrimB, setDirection }}
+              onRun={runCustom}
+              busy={busy}
+              expanded
+            />
+            <LineageRail chain={chain} from={primA} to={primB} active={evidence.length > 0} />
+            <section className="evidence">
+              <div className="section-head">
+                <h2>Evidence</h2>
+                <Pill hint="Outputs from the selected custom reduction.">{evidence.length || 0} cards</Pill>
+              </div>
+              {evidence.length === 0 && <div className="empty-panel">Run a custom path.</div>}
+              <div className="evidence-grid">
+                {evidence.map(({ demo, result }, index) => (
+                  <EvidenceCard
+                    key={`${demo?.id || demo?.path}-${index}`}
+                    demo={demo}
+                    result={result}
+                    label={demo?.title || demo?.name}
+                  />
+                ))}
+              </div>
+            </section>
+          </section>
+        )}
       </section>
     </main>
   )

@@ -109,21 +109,15 @@ h3 {
 }
 
 .demo-board {
-  display: grid;
-  grid-template-columns: 190px minmax(0, 1fr);
-  gap: 18px;
   width: min(1520px, calc(100vw - 28px));
   margin: 0 auto;
   padding: 18px 0 28px;
 }
 
 .preset-rail {
-  position: sticky;
-  top: 16px;
   display: grid;
   align-content: start;
   gap: 8px;
-  height: calc(100vh - 34px);
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -156,9 +150,48 @@ h3 {
   min-width: 0;
 }
 
+.panel-tabs {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  padding: 8px;
+}
+
+.panel-tabs button {
+  background: transparent;
+  color: var(--muted);
+}
+
+.panel-tabs button.selected {
+  border-color: #2c6ea5;
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+
+.panel-surface {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.guided-panel {
+  grid-template-columns: 190px minmax(0, 1fr);
+  align-items: start;
+}
+
+.guided-workspace {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
 .topbar,
 .run-hero,
 .lineage,
+.custom-owf,
 .custom-path,
 .evidence,
 .attack-lab,
@@ -350,6 +383,42 @@ h3 {
 
 .custom-path {
   padding: 0;
+}
+
+.custom-path-panel {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.custom-owf {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-color: #2f3a28;
+}
+
+.owf-grid {
+  display: grid;
+  grid-template-columns: minmax(300px, 0.9fr) minmax(0, 1.1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.owf-controls {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: #0a0f16;
+  padding: 12px;
+}
+
+.owf-controls details summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .custom-path > summary {
@@ -549,21 +618,17 @@ h3 {
 }
 
 @media (max-width: 1120px) {
-  .demo-board {
-    grid-template-columns: 1fr;
-  }
-
   .preset-rail {
-    position: static;
     grid-template-columns: repeat(5, minmax(0, 1fr));
-    height: auto;
   }
 
   .preset-rail .micro {
     grid-column: 1 / -1;
   }
 
+  .guided-panel,
   .custom-grid,
+  .owf-grid,
   .attack-grid,
   .demo-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -577,8 +642,11 @@ h3 {
   }
 
   .preset-rail,
+  .panel-tabs,
+  .guided-panel,
   .evidence-grid,
   .custom-grid,
+  .owf-grid,
   .attack-grid,
   .demo-grid,
   .mini-form,

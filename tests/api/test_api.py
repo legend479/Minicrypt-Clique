@@ -35,7 +35,7 @@ def test_catalog_lists_every_exposed_pa_demo(client):
     assert set(range(1, 21)).issubset(pa_numbers)
     assert {"/api/pa7/md", "/api/pa9/birthday", "/api/pa11/dh",
             "/api/pa13/miller_rabin", "/api/pa14/hastad",
-            "/api/pa16/elgamal"}.issubset(paths)
+            "/api/pa16/elgamal", "/api/custom/owf_chain"}.issubset(paths)
     for demo in demos:
         assert {"id", "pa", "title", "category", "path", "default_payload",
                 "controls", "result_fields", "tags", "claim"}.issubset(demo)
@@ -58,6 +58,7 @@ def test_catalog_default_payloads_are_runnable_for_smoke_subset(client):
         "/api/pa14/hastad",
         "/api/pa17/signcrypt",
         "/api/pa20/mpc",
+        "/api/custom/owf_chain",
     }
     for demo in catalog:
         if demo["path"] in smoke_paths:
@@ -76,6 +77,12 @@ def test_reduce_validation(client):
 
 
 @pytest.mark.parametrize(("path", "payload", "required_key"), [
+    ("/api/custom/owf_chain", {
+        "kind": "quadratic", "domain_bits": 16, "a": 5, "b": 3, "c": 7,
+        "xor_mask": 42405, "hc_bit": 0, "seed": "00" * 16,
+        "output_bytes": 8, "input_bits": 4, "prf_input": 3,
+        "message": "custom",
+    }, "built"),
     ("/api/pa1/owp", {"bits": 80, "x": 3}, "output"),
     ("/api/pa1/prg", {"foundation": "DLP", "seed": "00" * 16, "output_bytes": 8, "bits": 80}, "output_hex"),
     ("/api/pa2/ggm", {"key": "00" * 16, "x": 3, "input_bits": 4}, "output_hex"),

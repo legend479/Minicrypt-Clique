@@ -51,14 +51,19 @@ def test_frontend_exposes_hidden_pa_demo_endpoints():
 def test_frontend_has_minimal_demo_board_without_raw_json_ui():
     app = (ROOT / "frontend" / "src" / "App.jsx").read_text()
     assert "DemoBoard" in app
+    assert "PanelTabs" in app
     assert "LineageRail" in app
     assert "EvidenceCard" in app
     assert "Hint" in app
     assert "AttackLab" in app
     assert "DemoRunnerTile" in app
+    assert "CustomOWFWorkspace" in app
+    assert "custom-owf-chain" in app
     assert "isInteractiveDemo" in app
     assert "formatResult" in app
     assert "TraceTimeline" in app
     assert "Interactive attacks" in app
     assert "All demos" in app
+    assert "Custom Path" in app
+    assert "Use foundation" in app
     assert "Raw output" not in app
