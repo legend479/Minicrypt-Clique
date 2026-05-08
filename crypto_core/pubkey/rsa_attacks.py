@@ -128,3 +128,4 @@ def rsa_sign_homomorphism_forgery(pk, sig_m1: int, sig_m2: int, N: int) -> int:
     Used in PA#15 to motivate hash-then-sign.
     """
     return (sig_m1 * sig_m2) % N
+

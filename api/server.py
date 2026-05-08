@@ -380,6 +380,29 @@ def create_app():
 
     # ------------ PA#11: DH ------------
 
+    @app.route("/api/pa10/hmac_timing", methods=["POST"])
+    def pa10_hmac_timing():
+        from crypto_core.hashing.hmac import insecure_compare_demo, secure_compare
+        import time
+        
+        data = request.get_json(force=True)
+        t1 = bytes.fromhex(data.get("t1", "00"*8))
+        t2 = bytes.fromhex(data.get("t2", "00"*8))
+        use_secure = bool(data.get("use_secure", False))
+        
+        start = time.perf_counter()
+        if use_secure:
+            match = secure_compare(t1, t2)
+        else:
+            match = insecure_compare_demo(t1, t2)
+        end = time.perf_counter()
+        
+        return jsonify({
+            "match": match,
+            "time_ms": (end - start) * 1000,
+            "secure_mode": use_secure
+        })
+
     @app.route("/api/pa11/dh", methods=["POST"])
     def pa11_dh():
         from crypto_core.pubkey.diffie_hellman import DiffieHellman, MITMAdversary
@@ -479,13 +502,83 @@ def create_app():
         data = request.get_json(force=True)
         m = data.get("message", "I agree").encode("utf-8")
         tamper = bool(data.get("tamper", False))
-        sig = RSASignature(RSA(bits=512), DLPHash(bits=80))
+        raw_mode = bool(data.get("raw_mode", False)) # NEW: PA#15 demo requirement
+        
+        rsa = RSA(bits=512)
+        sig = RSASignature(rsa, DLPHash(bits=80))
         vk, sk = sig.keygen()
+        
+        # Multiplicative Homomorphism Attack Demo
+        if raw_mode:
+            m1, m2 = 2, 3
+            # Sign raw integers without hashing
+            sigma1 = pow(m1, sk.d, sk.N)
+            sigma2 = pow(m2, sk.d, sk.N)
+            
+            # The attacker forges a signature for m3 = m1 * m2 by multiplying the signatures
+            m3 = m1 * m2
+            forged_sigma = (sigma1 * sigma2) % sk.N
+            
+            # Verify the forged signature
+            verify_forged = pow(forged_sigma, vk.e, vk.N) == m3
+            
+            return jsonify({
+                "raw_mode": True,
+                "m1": m1, "sigma1": sigma1,
+                "m2": m2, "sigma2": sigma2,
+                "m3": m3, "forged_sigma": forged_sigma,
+                "verify": verify_forged,
+                "tamper": False
+            })
+            
         sigma = sig.sign(sk, m)
         check = m + b"!" if tamper else m
         return jsonify({"sigma": sigma,
                         "verify": sig.verify(vk, check, sigma),
                         "tamper": tamper})
+    
+    @app.route("/api/pa16/elgamal_cpa", methods=["POST"])
+    def pa16_elgamal_cpa():
+        from crypto_core.pubkey.elgamal import ElGamal
+        import random
+        
+        data = request.get_json(force=True)
+        tiny_group = bool(data.get("tiny_group", False))
+        # Use a 16-bit modulus if tiny_group is True, otherwise 128-bit
+        bits = 16 if tiny_group else 128 
+        
+        eg = ElGamal(bits=bits)
+        pk, sk = eg.keygen()
+        
+        # 1. Challenger setup
+        b = random.choice([0, 1])
+        m0, m1 = 10, 20
+        mb = m1 if b else m0
+        c1, c2 = eg.encrypt(pk, mb)
+        
+        # 2. Adversary distinguishes
+        guess = None
+        if tiny_group:
+            # Brute force DDH: Try all r in Z_q since q is tiny
+            for r in range(2, pk.q):
+                if pow(pk.g, r, pk.p) == c1:
+                    if (m0 * pow(pk.h, r, pk.p)) % pk.p == c2:
+                        guess = 0
+                        break
+                    else:
+                        guess = 1
+                        break
+        else:
+            # Group is too large to brute force DDH, adversary must guess
+            guess = random.choice([0, 1])
+            
+        return jsonify({
+            "tiny_group": tiny_group,
+            "bits": bits,
+            "b": b,
+            "guess": guess,
+            "win": b == guess
+        })
 
     # ------------ PA#16: ElGamal ------------
 

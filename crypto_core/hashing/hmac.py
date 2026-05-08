@@ -188,3 +188,24 @@ def length_extension_attack_demo(hash_fn: Hash, original_msg: bytes,
         "does_not_apply_to": "DLP-based multiplicative hash (group-structured)",
         "fix": "use HMAC: HMAC_k(m) = H((k^opad)||H((k^ipad)||m))",
     }
+
+import time
+
+def secure_compare(t1: bytes, t2: bytes) -> bool:
+    """PA#10: Compares two tags in constant time to prevent timing attacks."""
+    if len(t1) != len(t2):
+        return False
+    result = 0
+    for x, y in zip(t1, t2):
+        result |= x ^ y
+    return result == 0
+
+def insecure_compare_demo(t1: bytes, t2: bytes) -> bool:
+    """PA#10: Deliberately vulnerable early-exit comparison for side-channel demo."""
+    if len(t1) != len(t2):
+        return False
+    for x, y in zip(t1, t2):
+        if x != y:
+            return False
+        time.sleep(0.005) # Artificially amplify the timing leak for the demo
+    return True
