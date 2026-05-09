@@ -50,6 +50,7 @@ def test_frontend_exposes_hidden_pa_demo_endpoints():
 
 def test_frontend_has_minimal_demo_board_without_raw_json_ui():
     app = (ROOT / "frontend" / "src" / "App.jsx").read_text()
+    demos = (ROOT / "frontend" / "src" / "Demos.jsx").read_text()
     assert "DemoBoard" in app
     assert "PanelTabs" in app
     assert "LineageRail" in app
@@ -63,7 +64,13 @@ def test_frontend_has_minimal_demo_board_without_raw_json_ui():
     assert "formatResult" in app
     assert "TraceTimeline" in app
     assert "Interactive attacks" in app
-    assert "All demos" in app
+    assert "import Demos from './Demos.jsx'" in app
+    assert "Interactive Demo Deliverables from PA#1 through PA#20" in demos
+    assert "IND-CPA Game" in demos
+    assert "MAC Forge Attempt" in demos
+    assert "Play the OT Receiver" in demos
+    assert "Millionaire Problem Live" in demos
+    assert "['demos', 'Demos']" in app
     assert "Custom Path" in app
     assert "Use foundation" in app
     assert "Raw output" not in app

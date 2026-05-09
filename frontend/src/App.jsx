@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import Demos from './Demos.jsx'
 
 const FALLBACK_PRIMITIVES = [
   'OWF', 'OWP', 'PRG', 'PRF', 'PRP',
@@ -90,8 +91,6 @@ const GUIDED_PRESETS = [
     hint: 'Public-key assumptions lift into secure two-party computation.',
   },
 ]
-
-const CATEGORY_ORDER = ['Minicrypt', 'Hashing', 'Public Key', 'MPC', 'Attack', 'Number Theory']
 
 function defaultPayload(foundation) {
   return {
@@ -450,7 +449,7 @@ function PanelTabs({ activePanel, onChange }) {
     ['guided', 'Guided'],
     ['custom-owf', 'Custom OWF'],
     ['attacks', 'Attacks'],
-    ['catalog', 'Catalog'],
+    ['demos', 'Demos'],
     ['custom-path', 'Custom Path'],
   ]
   return (
@@ -629,47 +628,6 @@ function AttackLab({ catalog }) {
             onPayloadChange={setPayloadField}
             onRun={runDemo}
             expanded
-          />
-        ))}
-      </div>
-    </section>
-  )
-}
-
-function AllDemos({ catalog }) {
-  const [filter, setFilter] = useState('All')
-  const { payloadFor, setPayloadField, runDemo, results, busyId } = useDemoRunner()
-  const categories = useMemo(() => ['All', ...CATEGORY_ORDER.filter((cat) => catalog.some((demo) => demo.category === cat))], [catalog])
-  const visibleCatalog = catalog.filter((demo) => filter === 'All' || demo.category === filter)
-
-  return (
-    <section className="all-demos">
-      <div className="section-head">
-        <h2>All demos</h2>
-        <div className="filter-row">
-          {categories.map((category) => (
-            <button
-              type="button"
-              key={category}
-              className={filter === category ? 'selected' : ''}
-              onClick={() => setFilter(category)}
-            >
-              {category}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div className="demo-grid">
-        {visibleCatalog.map((demo) => (
-          <DemoRunnerTile
-            key={demo.id}
-            demo={demo}
-            payload={payloadFor(demo)}
-            result={results[demo.id]}
-            busy={busyId === demo.id}
-            onPayloadChange={setPayloadField}
-            onRun={runDemo}
-            expanded={isAttackDemo(demo)}
           />
         ))}
       </div>
@@ -882,9 +840,9 @@ function DemoBoard({ catalog, catalogById, catalogByPrimitive, primitives, healt
           </section>
         )}
 
-        {activePanel === 'catalog' && (
+        {activePanel === 'demos' && (
           <section className="panel-surface">
-            <AllDemos catalog={catalog} />
+            <Demos catalog={catalog} />
           </section>
         )}
 
